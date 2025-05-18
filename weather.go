@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"encoding/json"
 	"strings"
+	_ "embed"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -154,6 +155,18 @@ type City struct {
 
 type citiesLoadMsg struct {
 	Cities []string
+}
+
+//go:embed cities.txt
+var citiesData string
+
+func getCities() []string {
+	cities := strings.Split(citiesData, "\n")
+	ans := make([]string, len(cities))
+	for i, c := range cities {
+		ans[i] = strings.TrimSpace(c)
+	}
+	return ans
 }
 
 func loadCities() tea.Msg {

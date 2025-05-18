@@ -30,10 +30,12 @@ type model struct {
 	showingWeather bool
 }
 
-var initialModel = model{}
+var initialModel = model{
+	cities: getCities(),
+}
 
 func (m model) Init() tea.Cmd {
-	return loadCities
+	return nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
