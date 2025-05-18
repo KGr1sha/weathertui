@@ -20,14 +20,15 @@ var (
 
 type model struct {
 	cities []string
+	filtered []string
 	filter string
 	filtering bool
-	filtered []string
 	cursor int
 	selected string
 	weather WeatherResponse
-	err error
 	showingWeather bool
+	hasWeather bool
+	err error
 }
 
 var initialModel = model{
@@ -50,58 +51,66 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				m.showingWeather = false
 		}
-		} else {
-		if m.filtering {
-			switch msg.String() {
-			case "esc":
-				m.filtering = false
-				return m, nil
-			case "enter":
-				m.selected = m.filtered[m.cursor]
-				return m, getWeather(m.selected)
-			case "backspace":
-				if len(m.filter) > 0 {
-					m.filter = m.filter[:len(m.filter)-1]
+		} else { // Not showing weather
+			if m.filtering {
+				switch msg.String() {
+				case "esc":
+					m.filtering = false
+				case "enter":
+					if len(m.filtered) != 0 {
+						m.selected = m.filtered[m.cursor]
+						m.showingWeather = true
+						return m, getWeather(m.selected)
+					}
+				case "backspace":
+					if len(m.filter) > 0 {
+						m.filter = m.filter[:len(m.filter)-1]
+						return m, filterCmd(m.cities, m.filter)
+					}
+				default:
+					m.filter += msg.String()
+					m.cursor = 0
+					return m, filterCmd(m.cities, m.filter)
 				}
-				return m, filterCmd(m.cities, m.filter)
-			default:
-			m.filter += msg.String()
-			m.cursor = 0
-			return m, filterCmd(m.cities, m.filter)
+			} else { // Not filtering
+				switch msg.String() {
+				case "/":
+					m.filtering = true
+					m.filter = ""
+					m.filtered = make([]string, 0)
+				case "q":
+					return m, tea.Quit
+				case "up", "k":
+					if m.cursor > 0 {
+						m.cursor--
+					}
+				case "down", "j":
+					if m.cursor < len(m.cities)-1 {
+						m.cursor++
+					}
+				case " ", "enter":
+					if len(m.filtered) != 0 {
+						m.selected = m.filtered[m.cursor]
+					} else {
+						m.selected = m.cities[m.cursor]
+					}
+					m.showingWeather = true
+					return m, getWeather(m.selected)
+				}
 			}
 		}
-		switch msg.String() {
-		case "/":
-			m.filtering = true
-			m.filter = ""
-			m.filtered = make([]string, 0)
-		case "q":
-			return m, tea.Quit
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.cities)-1 {
-				m.cursor++
-			}
-		case " ", "enter":
-			if m.filtered != nil {
-				m.selected = m.filtered[m.cursor]
-			} else {
-				m.selected = m.cities[m.cursor]
-			}
-			return m, getWeather(m.selected)
-		}
-	}
+
 	case weatherMsg:
 		m.weather = msg.Weather
-		m.showingWeather = true
+		m.hasWeather = true
+
 	case filterMsg:
 		m.filtered = msg.Filtered
+
 	case errMsg:
 		m.err = msg
 	}
+
 	return m, nil
 }
 
@@ -120,11 +129,11 @@ func (m model) View() string {
 		return s
 	}
 
-	if m.selected != "" {
+	if m.showingWeather {
 		// Weather
 		s += selectedStyle.Render(m.selected) + "\n"
 		weather := "Asking Zeus for weather report...\n"
-		if m.showingWeather {
+		if m.hasWeather {
 			weather = parseWeather(m.weather)
 		}
 		s += weather
@@ -151,8 +160,8 @@ func (m model) View() string {
 		}
 
 		first := max(m.cursor - 5, 0)
-		last := min(max(m.cursor + 5, first + 10), len(cities))
-		for i := first; i < last; i++ {
+		last := min(max(m.cursor + 5, first + 10), len(cities)-1)
+		for i := first; i <= last; i++ {
 			c := cities[i]
 			line := fmt.Sprintf("%d. %s", i+1, c)
 			if m.cursor == i {
@@ -166,14 +175,14 @@ func (m model) View() string {
 
 	// Help
 	help := ""
-	if m.selected == "" {
+	if m.showingWeather {
+		help = "\n" + helpStyle.Render("q: quit • s|c: select other city")
+	} else {
 		if m.filtering {
 			help = "\n" + helpStyle.Render("esc|enter • stop filtering")
 		} else {
 			help = "\n" + helpStyle.Render("q: quit • /: filter • ↑(k)/↓(j)|: navigate • enter|space: select")
 		}
-	} else {
-		help = "\n" + helpStyle.Render("q: quit • s|c: select other city")
 	}
 	s += help
 
