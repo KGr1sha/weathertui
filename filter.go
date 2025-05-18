@@ -16,7 +16,7 @@ func filter(words []string, filter string) []string {
 	}
 	filter = strings.ToLower(filter)
 
-	contains := startsWithFilter(words, filter)
+	contains := containsFilter(words, filter)
 	if len(contains) > 0 {
 		return contains
 	}

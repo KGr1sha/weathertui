@@ -2,8 +2,6 @@ package main
 
 import (
 	"io"
-	"os"
-	"bytes"
 	"net/http"
 	"encoding/json"
 	"strings"
@@ -149,14 +147,6 @@ func filterCmd(cities []string, filterStr string) tea.Cmd {
 	}
 }
 
-type City struct {
-	Name string `json:"name"`
-}
-
-type citiesLoadMsg struct {
-	Cities []string
-}
-
 //go:embed cities.txt
 var citiesData string
 
@@ -168,20 +158,3 @@ func getCities() []string {
 	}
 	return ans
 }
-
-func loadCities() tea.Msg {
-	data, err := os.ReadFile("cities.txt")
-	if err != nil {
-		return errMsg{err}
-	}
-
-	lines := bytes.Split(data, []byte{'\n'})
-	cities := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if len(line) > 0 {
-			cities = append(cities, strings.TrimSpace(string(line)))
-		}
-	}
-	return citiesLoadMsg{cities}
-}
-

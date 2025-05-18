@@ -94,8 +94,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, getWeather(m.selected)
 		}
 	}
-	case citiesLoadMsg:
-		m.cities = msg.Cities
 	case weatherMsg:
 		m.weather = msg.Weather
 		m.showingWeather = true
