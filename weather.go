@@ -2,6 +2,8 @@ package main
 
 import (
 	"io"
+	"os"
+	"bytes"
 	"net/http"
 	"encoding/json"
 	"strings"
@@ -102,15 +104,16 @@ type WeatherIcon struct {
 	Value string `json:"value"`
 }
 
-type weatherMsg struct {
-	Weather WeatherResponse
-}
 
 type errMsg struct {
 	err error
 }
 
 func (e errMsg) Error() string { return e.err.Error() }
+
+type weatherMsg struct {
+	Weather WeatherResponse
+}
 
 func getWeather(city string) tea.Cmd {
 	return func() tea.Msg {
@@ -135,13 +138,37 @@ func getWeather(city string) tea.Cmd {
 	}
 }
 
-var initialModel = model{
-	cities: []string{
-		"Moscow",
-		"Saint's Petersburg",
-		"New York",
-		"Cape Town",
-		"Paris",
-		"Batumi",
-	},
+type filterMsg struct {
+	Filtered []string
 }
+
+func filterCmd(cities []string, filterStr string) tea.Cmd {
+	return func() tea.Msg {
+		return filterMsg{filter(cities, filterStr)}
+	}
+}
+
+type City struct {
+	Name string `json:"name"`
+}
+
+type citiesLoadMsg struct {
+	Cities []string
+}
+
+func loadCities() tea.Msg {
+	data, err := os.ReadFile("cities.txt")
+	if err != nil {
+		return errMsg{err}
+	}
+
+	lines := bytes.Split(data, []byte{'\n'})
+	cities := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if len(line) > 0 {
+			cities = append(cities, strings.TrimSpace(string(line)))
+		}
+	}
+	return citiesLoadMsg{cities}
+}
+

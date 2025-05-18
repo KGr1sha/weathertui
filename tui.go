@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt" 
-	"slices"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,31 +27,45 @@ type model struct {
 	selected string
 	weather WeatherResponse
 	err error
-	hasWeather bool
+	showingWeather bool
 }
 
+var initialModel = model{}
+
 func (m model) Init() tea.Cmd {
-	return nil
+	return loadCities
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.showingWeather {
+			switch msg.String() {
+			case "q":
+				return m, tea.Quit
+			case "c", "s":
+				m.selected = ""
+				m.cursor = 0
+				m.showingWeather = false
+		}
+		} else {
 		if m.filtering {
 			switch msg.String() {
-			case "esc", "enter":
+			case "esc":
 				m.filtering = false
 				return m, nil
+			case "enter":
+				m.selected = m.filtered[m.cursor]
+				return m, getWeather(m.selected)
 			case "backspace":
 				if len(m.filter) > 0 {
 					m.filter = m.filter[:len(m.filter)-1]
 				}
-				return m, nil
+				return m, filterCmd(m.cities, m.filter)
 			default:
 			m.filter += msg.String()
-			m.filtered = filter(m.cities, m.filter) // TODO: move it to command, so it runs as goroutine
 			m.cursor = 0
-			return m, nil
+			return m, filterCmd(m.cities, m.filter)
 			}
 		}
 		switch msg.String() {
@@ -78,14 +90,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = m.cities[m.cursor]
 			}
 			return m, getWeather(m.selected)
-		case "c", "s":
-			m.selected = ""
-			m.cursor = 0
-			m.hasWeather = false
 		}
+	}
+	case citiesLoadMsg:
+		m.cities = msg.Cities
 	case weatherMsg:
 		m.weather = msg.Weather
-		m.hasWeather = true
+		m.showingWeather = true
+	case filterMsg:
+		m.filtered = msg.Filtered
 	case errMsg:
 		m.err = msg
 	}
@@ -102,20 +115,31 @@ func (m model) View() string {
 	`
 	s := headerStyle.Render(banner) + "\n\n"
 
-	// Filter/selected block
+	if m.err != nil {
+		s += fmt.Sprintf("Runtime error: %v\n", m.err)
+		return s
+	}
+
 	if m.selected != "" {
+		// Weather
 		s += selectedStyle.Render(m.selected) + "\n"
 		weather := "Asking Zeus for weather report...\n"
-		if m.hasWeather {
+		if m.showingWeather {
 			weather = parseWeather(m.weather)
 		}
 		s += weather
 	} else {
+		if m.cities == nil {
+			s += "Loading..."
+			return s
+		}
+		// Filter
 		filterLine := filterStyle.Render("/ to filter: ") + filterStyle.Render(m.filter)
 		if m.filtering {
 			filterLine += filterStyle.Render("|")
 		}
 		s += filterLine + "\n\n"
+		s += fmt.Sprintf("%d\n", len(m.filtered))
 
 		// List
 		cities := m.cities
@@ -126,7 +150,10 @@ func (m model) View() string {
 			s += "No such location...\n"
 		}
 
-		for i, c := range cities {
+		first := max(m.cursor - 5, 0)
+		last := min(max(m.cursor + 5, first + 10), len(cities))
+		for i := first; i < last; i++ {
+			c := cities[i]
 			line := fmt.Sprintf("%d. %s", i+1, c)
 			if m.cursor == i {
 				line = cursorStyle.Render("-> ") + line
@@ -180,102 +207,4 @@ func parseWeather(w WeatherResponse) string {
 	s += wind
 	s += uv
 	return s
-}
-
-
-
-type filterItem struct {
-	word string
-	distance int // levenshtein
-}
-
-func filter(cities []string, filter string) []string {
-	filter = strings.ToLower(filter)
-
-	withCommonRunes := withCommonRunes(cities, filter)
-
-	withDistances := make([]filterItem, len(withCommonRunes))
-	for i, w := range withCommonRunes {
-		withDistances[i] = filterItem{word: w, distance: levenshteinDistance(w, filter)}
-	}
-
-	return bestMatches(withDistances)
-}
-
-func bestMatches(items []filterItem) []string {
-	slices.SortFunc(items, func(a, b filterItem) int {
-		if a.distance < b.distance {
-			return -1
-		} else if a.distance > b.distance {
-			return 1
-		}
-		return 0
-	})
-
-	var ans []string
-	leastDistance := items[0].distance
-	for _, item := range items {
-		if item.distance == leastDistance {
-			ans = append(ans, item.word)
-		}
-	}
-	return ans
-}
-
-func levenshteinDistance(word1, word2 string) int {
-	cache := make(map[[2]string]int)
-	var lev func(string, string) int
-	lev = func(a, b string) int {
-		if val, ok := cache[[2]string{a,b}]; ok {
-			return val
-		}
-		if len(b) == 0 {
-			ans := len(a)
-			cache[[2]string{a,b}] = ans
-			return ans
-		}
-		if len(a) == 0 {
-			ans := len(b)
-			cache[[2]string{a,b}] = ans
-			return ans
-		}
-		if a[0] == b[0] {
-			ans := lev(a[1:], b[1:])
-			cache[[2]string{a,b}] = ans
-			return ans
-		}
-		ans := 1 + min(
-			lev(a[1:], b),
-			lev(a, b[1:]),
-			lev(a[1:], b[1:]),
-		)
-		cache[[2]string{a,b}] = ans
-		return ans
-	}
-	return lev(word1, word2)
-}
-
-func withCommonRunes(words []string, word string) []string {
-	var ans []string
-	word = strings.ToLower(word)
-	searchingFor := countRunes(word)
-	for _, w := range words {
-		low := strings.ToLower(w)
-		runes := countRunes(low)
-		for r := range searchingFor {
-			if _, ok := runes[r]; ok {
-				ans = append(ans, w)
-				break;
-			}
-		}
-	}
-	return ans
-}
-
-func countRunes(word string) map[rune]int {
-	ans := make(map[rune]int)
-	for _, r := range word {
-		ans[r] += 1
-	}
-	return ans
 }
