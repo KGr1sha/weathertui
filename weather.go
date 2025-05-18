@@ -109,6 +109,7 @@ type weatherMsg struct {
 type errMsg struct {
 	err error
 }
+
 func (e errMsg) Error() string { return e.err.Error() }
 
 func getWeather(city string) tea.Cmd {
@@ -132,4 +133,15 @@ func getWeather(city string) tea.Cmd {
 
 		return weatherMsg{Weather: weather}
 	}
+}
+
+var initialModel = model{
+	cities: []string{
+		"Moscow",
+		"Saint's Petersburg",
+		"New York",
+		"Cape Town",
+		"Paris",
+		"Batumi",
+	},
 }
