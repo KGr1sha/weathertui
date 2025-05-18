@@ -15,6 +15,9 @@ var (
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))    // Yellow
 	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true) // Green
 	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))      // Grey
+    temperatureStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("202")) // Warm orange-red
+    windStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81")) // Cool blue
+    uvIndexStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("129")) // Purple tone for UV
 )
 
 type model struct {
@@ -57,7 +60,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.filtering = true
 			m.filter = ""
-			clear(m.filtered)
+			m.filtered = make([]string, 0)
 		case "q":
 			return m, tea.Quit
 		case "up", "k":
@@ -151,26 +154,56 @@ func (m model) View() string {
 }
 
 func parseWeather(w WeatherResponse) string {
-	s := ""
 	current := w.CurrentCondition[0]
-	s += fmt.Sprintf("Temp: %s°C\n", current.TempC)
-	s += fmt.Sprintf("Wind: %s(km/h)\n", current.WindspeedKmph)
+	wcode := current.WeatherCode
+	key := WeatherCodes[wcode]
+
+	icon := WeatherSymbols[key]
+	desc := current.WeatherDesc[0].Value + " " + icon + "\n"
+	asciiArt := ""
+	lines := WeatherAsciiSymbols[key]
+	for _, line := range lines {
+		asciiArt += line + "\n"
+	}
+
+	temp := "Temp "
+	temp += temperatureStyle.Render(current.TempC) + "°C"
+	temp += " (Feels like " + temperatureStyle.Render(current.FeelsLikeC) + "°C)"
+	temp += "\n"
+	wind := "Wind " + windStyle.Render(current.WindspeedKmph) + "(km/h)\n"
+	uv := "UV index " + uvIndexStyle.Render(current.UvIndex) + "\n"
+
+	s := ""
+	s += desc
+	s += asciiArt
+	s += temp + "\n"
+	s += wind
+	s += uv
 	return s
 }
 
+
+
+type filterItem struct {
+	word string
+	distance int // levenshtein
+}
+
 func filter(cities []string, filter string) []string {
-	type item struct {
-		word string
-		distance int // levenshtein
-	}
 	filter = strings.ToLower(filter)
+
 	withCommonRunes := withCommonRunes(cities, filter)
-	withDistances := make([]item, len(withCommonRunes))
+
+	withDistances := make([]filterItem, len(withCommonRunes))
 	for i, w := range withCommonRunes {
-		withDistances[i] = item{word: w, distance: levenshteinDistance(w, filter)}
+		withDistances[i] = filterItem{word: w, distance: levenshteinDistance(w, filter)}
 	}
 
-	slices.SortFunc(withDistances, func(a, b item) int {
+	return bestMatches(withDistances)
+}
+
+func bestMatches(items []filterItem) []string {
+	slices.SortFunc(items, func(a, b filterItem) int {
 		if a.distance < b.distance {
 			return -1
 		} else if a.distance > b.distance {
@@ -179,9 +212,12 @@ func filter(cities []string, filter string) []string {
 		return 0
 	})
 
-	ans := make([]string, len(withDistances))
-	for i, item := range withDistances {
-		ans[i] = item.word
+	var ans []string
+	leastDistance := items[0].distance
+	for _, item := range items {
+		if item.distance == leastDistance {
+			ans = append(ans, item.word)
+		}
 	}
 	return ans
 }
